@@ -402,9 +402,6 @@ func (oc *OutputCoordinator) setupLocalWriters(ctx context.Context, data NodeDat
 	rCtx := GetDAGContext(ctx)
 	mode := ir.EffectiveOutputBuffering(rCtx.DAG, &data.Step)
 
-	// Store mode in context for consistency with setupRemoteWriters
-	_ = WithOutputBuffering(ctx, mode)
-
 	// Check if stdout and stderr should be merged (same file path)
 	isMerged := data.State.Stdout == data.State.Stderr
 
