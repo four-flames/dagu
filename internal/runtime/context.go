@@ -115,6 +115,23 @@ func WithDAGContext(ctx context.Context, rCtx Context) context.Context {
 	return runctx.WithContext(ctx, rCtx)
 }
 
+type outputBufferingCtxKey struct{}
+
+// WithOutputBuffering stores the output buffering mode in the context.
+// It is consumed by log writer factories to decide how to buffer step output.
+func WithOutputBuffering(ctx context.Context, mode ir.OutputBuffering) context.Context {
+	return context.WithValue(ctx, outputBufferingCtxKey{}, mode)
+}
+
+// GetOutputBuffering returns the output buffering mode from the context.
+// Falls back to ir.OutputBufferingBuffer when not set.
+func GetOutputBuffering(ctx context.Context) ir.OutputBuffering {
+	if mode, ok := ctx.Value(outputBufferingCtxKey{}).(ir.OutputBuffering); ok {
+		return mode
+	}
+	return ir.OutputBufferingBuffer
+}
+
 // NewDAGRunRef is a convenience wrapper for execution.NewDAGRunRef.
 func NewDAGRunRef(name, runID string) ir.DAGRunRef {
 	return ir.NewDAGRunRef(name, runID)

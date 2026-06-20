@@ -72,6 +72,8 @@ type StepLogWriterSnapshot struct {
 	BufferLen        int
 	Sequence         uint64
 	HasStream        bool
+	LineBuffered     bool
+	Unbuffered       bool
 }
 
 // SnapshotStepLogWriter captures step writer state under its lock.
@@ -91,6 +93,8 @@ func snapshotStepLogWriterLocked(w *StepLogWriter) StepLogWriterSnapshot {
 		BufferLen:        len(w.buffer) + len(w.remoteBuffer) - w.remoteSent,
 		Sequence:         w.sequence,
 		HasStream:        w.stream != nil,
+		LineBuffered:     w.lineBuffered,
+		Unbuffered:       w.unbuffered,
 	}
 }
 

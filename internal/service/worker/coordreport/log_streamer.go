@@ -4,6 +4,7 @@
 package coordreport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -183,14 +184,17 @@ func (s *LogStreamer) NewStepWriter(ctx context.Context, stepName string, stream
 		ctx = context.Background()
 	}
 	streamCtx, cancel := context.WithCancel(ctx)
+	mode := runtime.GetOutputBuffering(ctx)
 	return &stepLogWriter{
-		parentCtx:  ctx,
-		ctx:        streamCtx,
-		cancel:     cancel,
-		streamer:   s,
-		stepName:   stepName,
-		streamType: streamType,
-		buffer:     make([]byte, 0, logBufferSize),
+		parentCtx:    ctx,
+		ctx:          streamCtx,
+		cancel:       cancel,
+		streamer:     s,
+		stepName:     stepName,
+		streamType:   streamType,
+		buffer:       make([]byte, 0, logBufferSize),
+		lineBuffered: mode == ir.OutputBufferingLine,
+		unbuffered:   mode == ir.OutputBufferingNone,
 	}
 }
 
@@ -309,6 +313,8 @@ type stepLogWriter struct {
 	streamingDisabled bool
 	remoteTruncated   bool
 	pendingSince      time.Time
+	lineBuffered      bool // Flush on newline characters
+	unbuffered        bool // Flush immediately on every Write
 }
 
 // Write implements io.Writer
@@ -320,13 +326,33 @@ func (w *stepLogWriter) Write(p []byte) (int, error) {
 		return 0, io.ErrClosedPipe
 	}
 
+	if w.unbuffered {
+		// Flush every Write immediately
+		return len(p), w.sendChunk(p)
+	}
+
 	if len(w.buffer) == 0 && w.remoteSent == len(w.remoteBuffer) {
 		w.pendingSince = time.Now()
 	}
 	w.buffer = append(w.buffer, p...)
 
-	// Flush when buffer exceeds threshold
-	if len(w.buffer) >= logBufferSize {
+	if w.lineBuffered {
+		// Flush complete lines, keep trailing partial data
+		for {
+			idx := bytes.IndexByte(w.buffer, '\n')
+			if idx < 0 {
+				break
+			}
+			// Advance past the line before sending, so a send failure
+			// doesn't cause the same line to be retried on the next Write.
+			line := w.buffer[:idx+1]
+			w.buffer = w.buffer[idx+1:]
+			if err := w.sendChunk(line); err != nil {
+				return len(p), err
+			}
+		}
+	} else if len(w.buffer) >= logBufferSize {
+		// Buffered mode: flush at 32KB threshold
 		_ = w.flushLocked()
 	}
 
@@ -431,6 +457,64 @@ func (w *stepLogWriter) flushLocked() error {
 	if len(w.remoteBuffer) >= maxRetainedStepLogSize {
 		return w.checkpointLocked()
 	}
+	return nil
+}
+
+// sendChunk sends a single chunk of data via the gRPC stream immediately.
+// It is used by line-buffered and unbuffered output modes to flush data
+// without waiting for the 32KB threshold. Caller must hold w.mu.
+func (w *stepLogWriter) sendChunk(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Initialize stream if needed
+	if w.stream == nil {
+		var stream coordinatorv1.CoordinatorService_StreamLogsClient
+		err := w.withOperationTimeout(func() error {
+			var err error
+			stream, err = w.streamer.openStream(w.ctx)
+			return err
+		})
+		if err != nil {
+			w.handleStreamFailureLocked(err)
+			if isLogStreamingNotConfigured(err) {
+				w.pendingSince = time.Time{}
+				return nil
+			}
+			w.pendingSince = time.Now()
+			return err
+		}
+		w.stream = stream
+	}
+
+	// Split data into chunks if necessary to stay within gRPC limits
+	for len(data) > 0 {
+		chunkSize := min(len(data), maxChunkSize)
+
+		chunkData := make([]byte, chunkSize)
+		copy(chunkData, data[:chunkSize])
+		data = data[chunkSize:]
+
+		nextSeq := w.sequence + w.remoteChunks + 1
+		chunk := w.streamer.newChunk(w.stepName, toProtoStreamType(w.streamType), nextSeq)
+		chunk.Data = chunkData
+		chunk.SetByteOffset(w.byteOffset + uint64(w.remoteSent)) // #nosec G115 -- remoteSent is non-negative
+
+		if err := w.withOperationTimeout(func() error {
+			return w.stream.Send(chunk)
+		}); err != nil {
+			w.handleStreamFailureLocked(err)
+			if isLogStreamingNotConfigured(err) {
+				w.pendingSince = time.Time{}
+				return nil
+			}
+			w.pendingSince = time.Now()
+			return err
+		}
+		w.sequence = nextSeq
+	}
+
 	return nil
 }
 
