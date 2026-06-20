@@ -1114,7 +1114,10 @@ func (srv *Server) setupAssetRoutes(r *chi.Mux, basePath string) {
 		if ctype := mime.TypeByExtension(path.Ext(r.URL.Path)); ctype != "" {
 			w.Header().Set("Content-Type", ctype)
 		}
-		fileServer.ServeHTTP(w, r)
+		// Strip cache-busting query params before serving
+		r2 := *r
+		r2.URL = &url.URL{Path: r.URL.Path}
+		fileServer.ServeHTTP(w, &r2)
 	})
 }
 
