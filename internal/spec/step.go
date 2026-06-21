@@ -62,6 +62,10 @@ type step struct {
 	// Can be "separate" (default) for separate .out and .err files,
 	// or "merged" for a single combined .log file.
 	LogOutput types.LogOutputValue `yaml:"log_output,omitempty"`
+	// OutputBuffering controls how the step's output is buffered before being
+	// written to the log stream. Overrides the DAG-level setting.
+	// Can be "buffer" (default), "line", or "none".
+	OutputBuffering ir.OutputBuffering `yaml:"output_buffering,omitempty"`
 	// Output is the variable name to store the output.
 	// Can be a string for captured stdout or an object for structured step output.
 	Output any `yaml:"output,omitempty"`
@@ -431,6 +435,7 @@ var stepLogOutputStage = stepTransformStage{
 			out.StderrArtifact = v.artifactPath
 		}),
 	stepField("log_output", buildStepLogOutput, func(out *ir.Step, v ir.LogOutputMode) { out.LogOutput = v }),
+	stepField("output_buffering", buildStepOutputBuffering, func(out *ir.Step, v ir.OutputBuffering) { out.OutputBuffering = v }),
 }
 
 var stepExecutionPlacementStage = stepTransformStage{
@@ -786,6 +791,14 @@ func buildStepLogOutput(_ stepBuildContext, s *step) (ir.LogOutputMode, error) {
 		return "", nil
 	}
 	return s.LogOutput.Mode(), nil
+}
+
+func buildStepOutputBuffering(_ stepBuildContext, s *step) (ir.OutputBuffering, error) {
+	if s.OutputBuffering == "" {
+		// Return empty string to indicate "inherit from DAG"
+		return "", nil
+	}
+	return s.OutputBuffering, nil
 }
 
 func buildStepMailOnError(_ stepBuildContext, s *step) (bool, error) {
