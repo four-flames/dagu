@@ -352,6 +352,14 @@ func (w *stepLogWriter) Write(p []byte) (int, error) {
 				return len(p), err
 			}
 		}
+		// Guard against unbounded growth when no newlines appear
+		// (progress bars, base64 blobs, minified JSON).
+		if len(w.buffer) >= logBufferSize {
+			if err := w.sendChunk(w.buffer); err != nil {
+				return len(p), err
+			}
+			w.buffer = w.buffer[:0]
+		}
 	} else if len(w.buffer) >= logBufferSize {
 		// Buffered mode: flush at 32KB threshold
 		_ = w.flushLocked()
