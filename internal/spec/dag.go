@@ -88,6 +88,10 @@ type dag struct {
 	// Can be "separate" (default) for separate .out and .err files,
 	// or "merged" for a single combined .log file.
 	LogOutput types.LogOutputValue `yaml:"log_output,omitempty"`
+	// OutputBuffering sets the default output buffering mode for all steps.
+	// Individual steps can override this with their own outputBuffering.
+	// Can be "buffer" (default), "line", or "none".
+	OutputBuffering ir.OutputBuffering `yaml:"output_buffering,omitempty"`
 	// Consts contains immutable values resolved while loading the DAG.
 	Consts any `yaml:"consts,omitempty"`
 	// Env is the environment variables setting.
@@ -578,6 +582,7 @@ var fullRunOutputStage = transformStage{
 	dagField("log_dir", buildLogDir, func(out *ir.DAG, v string) { out.LogDir = v }),
 	dagField("artifacts", buildArtifacts, func(out *ir.DAG, v *ir.ArtifactsConfig) { out.Artifacts = v }),
 	dagField("log_output", buildLogOutput, func(out *ir.DAG, v ir.LogOutputMode) { out.LogOutput = v }),
+	dagField("output_buffering", buildOutputBuffering, func(out *ir.DAG, v ir.OutputBuffering) { out.OutputBuffering = v }),
 }
 
 var fullInteractionStage = transformStage{
@@ -1513,6 +1518,14 @@ func buildLogOutput(_ buildContext, d *dag) (ir.LogOutputMode, error) {
 		return "", nil
 	}
 	return d.LogOutput.Mode(), nil
+}
+
+func buildOutputBuffering(_ buildContext, d *dag) (ir.OutputBuffering, error) {
+	if d.OutputBuffering == "" {
+		// Return empty to allow inheritance from base config.
+		return "", nil
+	}
+	return d.OutputBuffering, nil
 }
 
 func buildMailOn(_ buildContext, d *dag) (*ir.MailOn, error) {
