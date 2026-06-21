@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -608,12 +609,27 @@ func (w *stepLogWriter) Close() error {
 	defer cancel()
 	w.parentCtx = retryCtx
 
-	return backoff.Retry(retryCtx, func(context.Context) error {
+	err := backoff.Retry(retryCtx, func(context.Context) error {
 		if err := w.flushLocked(); err != nil {
 			return err
 		}
 		return w.finishLocked()
 	}, finalDeliveryRetryPolicy(), isRetryableStreamError)
+	if err != nil {
+		// The gRPC stream could not be re-established within the retry window.
+		// Log the retained tail so the discarded output surfaces in the run
+		// status instead of being silently lost.
+		tail := w.remoteBuffer
+		if len(tail) > 4096 {
+			tail = tail[len(tail)-4096:]
+		}
+		logger.Error(w.ctx, "gRPC log stream lost — retained output discarded",
+			tag.Step(w.stepName),
+			slog.Int("retained-bytes", len(w.remoteBuffer)),
+			slog.String("output-tail", string(tail)),
+		)
+	}
+	return err
 }
 
 func (w *stepLogWriter) finishLocked() error {
@@ -899,6 +915,7 @@ func (w *schedulerLogWriter) sendSchedulerDataLocked(data []byte) error {
 		w.streamedBytes += int64(len(chunkData))
 	}
 
+	w.buffer = w.buffer[:0]
 	return nil
 }
 
