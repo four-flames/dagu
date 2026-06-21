@@ -309,29 +309,36 @@ func TestEffectiveOutputBuffering(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		dagMode    core.OutputBuffering
-		stepMode   core.OutputBuffering
-		expectMode core.OutputBuffering
+		dagMode    ir.OutputBuffering
+		stepMode   ir.OutputBuffering
+		expectMode ir.OutputBuffering
 	}{
 		// Step overrides DAG
-		{"step line overrides dag buffer", core.OutputBufferingBuffer, core.OutputBufferingLine, core.OutputBufferingLine},
-		{"step none overrides dag buffer", core.OutputBufferingBuffer, core.OutputBufferingNone, core.OutputBufferingNone},
-		{"step buffer overrides dag line", core.OutputBufferingLine, core.OutputBufferingBuffer, core.OutputBufferingBuffer},
-		{"step none overrides dag line", core.OutputBufferingLine, core.OutputBufferingNone, core.OutputBufferingNone},
+		{"step line overrides dag buffer", ir.OutputBufferingBuffer, ir.OutputBufferingLine, ir.OutputBufferingLine},
+		{"step none overrides dag buffer", ir.OutputBufferingBuffer, ir.OutputBufferingNone, ir.OutputBufferingNone},
+		{"step buffer overrides dag line", ir.OutputBufferingLine, ir.OutputBufferingBuffer, ir.OutputBufferingBuffer},
+		{"step none overrides dag line", ir.OutputBufferingLine, ir.OutputBufferingNone, ir.OutputBufferingNone},
 		// Step empty → inherits DAG
-		{"step empty inherits dag line", core.OutputBufferingLine, "", core.OutputBufferingLine},
-		{"step empty inherits dag none", core.OutputBufferingNone, "", core.OutputBufferingNone},
+		{"step empty inherits dag line", ir.OutputBufferingLine, "", ir.OutputBufferingLine},
+		{"step empty inherits dag none", ir.OutputBufferingNone, "", ir.OutputBufferingNone},
 		// Both empty → default buffer
-		{"both empty defaults to buffer", "", "", core.OutputBufferingBuffer},
+		{"both empty defaults to buffer", "", "", ir.OutputBufferingBuffer},
+		// Step overrides DAG none
+		{"step buffer overrides dag none", ir.OutputBufferingNone, ir.OutputBufferingBuffer, ir.OutputBufferingBuffer},
+		{"step line overrides dag none", ir.OutputBufferingNone, ir.OutputBufferingLine, ir.OutputBufferingLine},
+		// Step empty inherits DAG buffer
+		{"step empty inherits dag buffer", ir.OutputBufferingBuffer, "", ir.OutputBufferingBuffer},
+		// DAG unset, step set
+		{"dag unset step line", "", ir.OutputBufferingLine, ir.OutputBufferingLine},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			dag := &core.DAG{OutputBuffering: tt.dagMode}
-			step := core.Step{OutputBuffering: tt.stepMode}
-			mode := core.EffectiveOutputBuffering(dag, &step)
+			dag := &ir.DAG{OutputBuffering: tt.dagMode}
+			step := ir.Step{OutputBuffering: tt.stepMode}
+			mode := ir.EffectiveOutputBuffering(dag, &step)
 			assert.Equal(t, tt.expectMode, mode)
 		})
 	}
