@@ -2356,7 +2356,11 @@ func TestOutputBufferingLine_SendError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "line send failed")
 
-	require.NoError(t, writer.Close())
+	// The failed line is retained in remoteBuffer, so Close retries delivery
+	// and reports the failure instead of silently dropping the output.
+	closeErr := writer.Close()
+	assert.Error(t, closeErr)
+	assert.Contains(t, closeErr.Error(), "line send failed")
 }
 
 func TestOutputBufferingNone_SendError(t *testing.T) {
@@ -2377,7 +2381,11 @@ func TestOutputBufferingNone_SendError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "immediate send failed")
 
-	require.NoError(t, writer.Close())
+	// The failed data is retained in remoteBuffer, so Close retries delivery
+	// and reports the failure instead of silently dropping the output.
+	closeErr := writer.Close()
+	assert.Error(t, closeErr)
+	assert.Contains(t, closeErr.Error(), "immediate send failed")
 }
 
 func TestOutputBuffering_BackwardCompatibility(t *testing.T) {

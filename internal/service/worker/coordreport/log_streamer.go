@@ -477,6 +477,10 @@ func (w *stepLogWriter) sendChunk(data []byte) error {
 		return nil
 	}
 
+	// Track data in remoteBuffer for consistent byte offset calculation
+	// with flushLocked. Both paths share remoteSent/byteOffset.
+	w.remoteBuffer = append(w.remoteBuffer, data...)
+
 	// Initialize stream if needed
 	if w.stream == nil {
 		var stream coordinatorv1.CoordinatorService_StreamLogsClient
@@ -521,9 +525,13 @@ func (w *stepLogWriter) sendChunk(data []byte) error {
 			w.pendingSince = time.Now()
 			return err
 		}
-		w.sequence = nextSeq
+		w.remoteSent += chunkSize
+		w.remoteChunks++
 	}
 
+	if len(w.remoteBuffer) >= maxRetainedStepLogSize {
+		return w.checkpointLocked()
+	}
 	return nil
 }
 
