@@ -310,6 +310,19 @@ func TestSchedulerLogWriter_StreamFailure(t *testing.T) {
 		require.NoError(t, err)
 		_, err = w.Write(chunk)
 		require.NoError(t, err)
+
+		// The failed first send is retried asynchronously by the flush loop.
+		// Wait until the replay has delivered exactly the two chunks before
+		// closing, so Close's final delivery has nothing left to send.
+		require.Eventually(t, func() bool {
+			var received int
+			for _, c := range mockStream.getSentChunks() {
+				if !c.IsFinal {
+					received += len(c.Data)
+				}
+			}
+			return received == 2*coordreport.LogBufferSize
+		}, 8*time.Second, 10*time.Millisecond)
 		require.NoError(t, w.Close())
 
 		var totalReceived int
@@ -594,9 +607,8 @@ func TestWrite_FlushError_Continues(t *testing.T) {
 	data := make([]byte, coordreport.LogBufferSize)
 	n, err := writer.Write(data)
 
-	// Write should report the flush error (stream marked dead)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "send failed")
+	// Write should succeed even though flush failed (best-effort)
+	require.NoError(t, err)
 	assert.Equal(t, len(data), n)
 }
 
