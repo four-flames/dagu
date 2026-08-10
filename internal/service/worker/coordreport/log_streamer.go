@@ -923,7 +923,11 @@ func (w *schedulerLogWriter) sendSchedulerDataLocked(data []byte) error {
 		w.streamedBytes += int64(len(chunkData))
 	}
 
-	w.buffer = w.buffer[:0]
+	// NOTE: w.buffer is owned by the mu side (Write/mirrorStepOutput/
+	// takePendingData) and is already empty here — the pending data was
+	// snapshotted by takePendingData before the streamMu side ran. Never
+	// clear or resize w.buffer while holding streamMu; it races with
+	// concurrent writers on mu.
 	return nil
 }
 
