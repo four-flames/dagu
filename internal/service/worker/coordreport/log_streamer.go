@@ -826,7 +826,9 @@ func (w *schedulerLogWriter) writeLocalAndBufferLocked(p []byte) (int, bool, err
 	if n > 0 {
 		w.localBytes += int64(n)
 		if len(w.buffer)+n >= logBufferSize {
-			w.buffer = w.buffer[:0]
+			// Buffer is near capacity — append, then signal flush.
+			// The flush loop will take the full buffer via takePendingData.
+			w.buffer = append(w.buffer, p[:n]...)
 			return n, true, err
 		}
 		w.buffer = append(w.buffer, p[:n]...)
