@@ -24,6 +24,7 @@ import { RefreshButton } from '@/components/ui/refresh-button';
 import { AppBarContext } from '@/contexts/AppBarContext';
 import { DAGRunDetailsModal } from '@/features/dag-runs/components/dag-run-details';
 import { formatQueuedCount } from '@/features/queues/components/QueueCard';
+import { queueMayHaveQueuedItems } from '@/features/queues/lib/queueCounts';
 import QueueRunsTable from '@/features/queues/components/QueueRunsTable';
 import {
   QueueBatchResult,
@@ -79,6 +80,7 @@ function queueRefreshToken(
   return JSON.stringify({
     name: queue.name,
     queuedCount: queue.queuedCount,
+    queuedCountCapped: queue.queuedCountCapped === true,
     running: (queue.running ?? []).map(
       (dagRun) => `${dagRun.name}:${dagRun.dagRunId}:${dagRun.status}`
     ),
@@ -137,7 +139,10 @@ function QueueDetailsPage() {
     loadMore,
     reload,
   } = useQueuedItemsFeed({
-    enabled: Boolean(queue && (queue.queuedCount || 0) > 0),
+    // A capped count can be 0 while entries remain unscanned, which happens when
+    // running entries fill the scan window before any queued entry is reached.
+    // Treat that as possibly non-empty so the feed still fetches.
+    enabled: Boolean(queue && queueMayHaveQueuedItems(queue)),
     queueName,
     refreshToken,
   });
@@ -439,7 +444,7 @@ function QueueDetailsPage() {
                     </div>
                   )}
                 </>
-              ) : queue && queue.queuedCount > 0 ? (
+              ) : queue && queueMayHaveQueuedItems(queue) ? (
                 <div className="space-y-3 rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
                   <div>
                     No visible queued items were returned for this queue.
